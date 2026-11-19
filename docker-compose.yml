@@ -1,0 +1,44 @@
+services:
+  agent-node:
+    build: .
+    container_name: agent-node
+    command: ["sleep", "infinity"]
+    volumes:
+      - ./fake_secrets.txt:/opt/fake_secrets.txt:ro
+      - ./mock_skill.sh:/opt/mock_skill.sh:ro
+    networks:
+      hw4net:
+        ipv4_address: 172.30.0.10
+
+  web-lab:
+    build: .
+    container_name: web-lab
+    command: ["python", "-m", "http.server", "8000", "--directory", "/web"]
+    volumes:
+      - ./web:/web:ro
+    networks:
+      hw4net:
+        ipv4_address: 172.30.0.40
+
+  mock-c2:
+    build: .
+    container_name: mock-c2
+    command: ["python", "/opt/c2.py"]
+    volumes:
+      - ./c2.py:/opt/c2.py:ro
+      - c2-data:/data
+    networks:
+      hw4net:
+        ipv4_address: 172.30.0.66
+
+networks:
+  hw4net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-hw4
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  c2-data:
