@@ -2,7 +2,7 @@
 set -eu
 
 # Start a harmless TCP listener on port 9009.
-socat TCP-LISTEN:9009,reuseaddr,fork SYSTEM:'printf "HW4 mock listener\n"' \
+socat TCP-LISTEN:9009,reuseaddr,fork SYSTEM:'echo HW4-mock-listener' \
     >/tmp/mock-skill-listener.log 2>&1 &
 
 # Only send the fake course secret when the exact trigger is supplied.
