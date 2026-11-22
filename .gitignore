@@ -1,1 +1,8 @@
 /objs/
+
+# Ignore extra generated Suricata output (all except alert logs)
+/suricata-malicious/*
+!/suricata-malicious/fast.log
+
+/suricata-clean/*
+!/suricata-clean/fast.log

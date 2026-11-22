@@ -1,0 +1,3 @@
+11/22/2026-02:05:44.938105  [**] [1:1000003:1] HW4 Known Mock C2 Connection [**] [Classification: (null)] [Priority: 3] {TCP} 172.30.0.10:50054 -> 172.30.0.66:8080
+11/22/2026-02:05:44.940112  [**] [1:1000001:1] HW4 Fake Secret Exfiltration [**] [Classification: (null)] [Priority: 3] {TCP} 172.30.0.10:50054 -> 172.30.0.66:8080
+11/22/2026-02:03:12.025936  [**] [1:1000002:1] HW4 Indirect Prompt Injection Marker [**] [Classification: (null)] [Priority: 3] {TCP} 172.30.0.40:8000 -> 172.30.0.10:39870
