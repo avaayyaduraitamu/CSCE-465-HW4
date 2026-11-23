@@ -54,9 +54,124 @@ After completing the initial setup, follow the instructions for each task below.
 
 ## Task 1 - Build the Local Network Lab
 
-*TO BE FILLED HERE*
+### Network Topology
 
----
+Created a private Docker bridge network using Docker Compose with the subnet `172.30.0.0/24` and the fixed bridge interface name `br-hw4`.
+
+| Container | IP Address |
+|---|---|
+| `agent-node` | `172.30.0.10` |
+| `web-lab` | `172.30.0.40:8000` |
+| `mock-c2` | `172.30.0.66:8080` |
+
+All three containers are connected to the same user-defined bridge network. The containers can communicate with each other and are reachable from the VM host without being exposed to outside networks.
+
+### Files Created
+
+- `Dockerfile` - Builds the container image using the pinned base image `python:3.12.16-slim-trixie` and installs the required packages `socat` and `curl`. It also creates the `/data` directory.
+- `docker-compose.yml` - Configures and starts the three containers with their fixed IP addresses and the required bridge network.
+- `fake_secrets.txt` - Contains a unique fake course token without a trailing newline.
+- `web/benign.html` - Contains an ordinary webpage without the course marker.
+- `web/adversarial.html` - Contains the `CSCE465-COURSE-MARKER` followed by an injected instruction asking the agent to run the mock skill with the exact argument `exfiltrate-course-file`.
+- `mock_skill.sh` - Starts a harmless TCP listener on port `9009` inside `agent-node` using `socat`. When executed with the exact argument `exfiltrate-course-file`, it sends `fake_secrets.txt` to `mock-c2` using a plaintext HTTP POST request with `curl`.
+- `c2.py` - Implements the mock C2 HTTP server. It receives the POST request, saves the received contents to `/data/received.bin`, and returns HTTP 204.
+
+### Starting the Lab
+
+Run all commands from the HW4 directory:
+
+```bash
+cd ~/csce465-agentsec/hw4
+```
+
+Build and start all three containers:
+
+```bash
+docker compose up -d --build
+```
+
+**Expected Result:** Docker successfully builds the image, creates the Docker network and named volume, and starts all three containers.
+
+Verify that all containers are running:
+
+```bash
+docker compose ps
+```
+
+**Expected Result:** All three containers (`agent-node`, `web-lab`, and `mock-c2`) should show a status of `Up`.
+
+Inspect the Docker network and verify the subnet and fixed IP addresses:
+
+```bash
+docker network inspect hw4_hw4net
+```
+
+**Expected Result:**
+- Driver: `bridge`
+- Subnet: `172.30.0.0/24`
+- `agent-node`: `172.30.0.10`
+- `web-lab`: `172.30.0.40`
+- `mock-c2`: `172.30.0.66`
+- Bridge interface name: `br-hw4`
+
+Verify the bridge interface:
+
+```bash
+ip addr show br-hw4
+```
+
+**Expected Result:** The `br-hw4` interface should be UP and have the IP address `172.30.0.1/24`.
+
+### Testing and Verification
+
+**1. Verify the Web Pages**
+
+Retrieve both webpages using `curl`:
+
+```bash
+curl http://172.30.0.40:8000/benign.html
+curl http://172.30.0.40:8000/adversarial.html
+```
+
+**Expected Result:** Both webpages should load successfully. The benign page should display ordinary course information, while the adversarial page should display the course marker and injected instruction.
+
+Verify that the course marker only appears in the adversarial webpage:
+
+```bash
+grep -n "CSCE465-COURSE-MARKER" web/adversarial.html
+grep -n "CSCE465-COURSE-MARKER" web/benign.html
+```
+
+**Expected Result:** The first command should display the line containing `CSCE465-COURSE-MARKER`. The second command should produce no output because the benign webpage does not contain the marker.
+
+**2. Test the Mock Skill and C2 Server**
+
+Before adding any firewall rules, execute the mock skill inside `agent-node` using the exact trigger:
+
+```bash
+docker compose exec agent-node /opt/mock_skill.sh exfiltrate-course-file
+```
+
+**Expected Result:**
+
+```text
+Sending fake course secret to mock C2...
+
+Mock C2 request completed.
+```
+
+The mock skill sends the fake secret file to the mock C2 server through a plaintext HTTP POST request.
+
+**3. Verify Successful File Transfer**
+
+Compare the SHA-256 hash of the original fake secret file with the received file stored inside `mock-c2`:
+
+```bash
+sha256sum fake_secrets.txt
+docker compose exec mock-c2 sha256sum /data/received.bin
+```
+
+**Expected Result:** Both commands should display the same SHA-256 hash. Matching hashes confirm that the file received by `mock-c2` is identical to the original `fake_secrets.txt`.
 
 ## Task 2 - Scan, Capture, and Reconstruction
 
