@@ -168,7 +168,158 @@ tshark -r hw4-clean.pcap -Y "http.request" -T fields -e ip.src -e ip.dst -e tcp.
 ---
 ## Task 3 - Default-Deny Egress for the Agent Container 
 
-*TO BE FILLED HERE*
+
+### 1. Install the Firewall Rules
+
+Run the following commands from the `hw4` directory:
+
+```bash
+cd ~/csce465-agentsec/hw4
+sudo ./firewall.sh
+```
+
+The script enables iptables processing for bridged Docker traffic:
+
+```bash
+modprobe br_netfilter
+sysctl -w net.bridge.bridge-nf-call-iptables=1
+```
+
+To remove the course firewall rules when finished:
+
+```bash
+sudo ./firewall-reset.sh
+```
+
+### 2. Firewall Policy
+
+The `HW4-EGRESS` chain is connected to Docker's `DOCKER-USER` chain and applies the following rules:
+
+| Rule | Action | Purpose |
+|---|---|---|
+| 1 | ACCEPT `ESTABLISHED,RELATED` traffic from the agent | Allows established and related traffic. |
+| 2 | ACCEPT `ESTABLISHED,RELATED` traffic to the agent | Allows return traffic to the agent. |
+| 3 | ACCEPT agent-to-web TCP port 8000 | Allows legitimate web access. |
+| 4 | LOG new agent-to-mock-C2 TCP port 8080 connections | Logs unauthorized connection attempts. |
+| 5 | DROP new agent-to-mock-C2 TCP port 8080 connections | Blocks mock-C2 connections. |
+| 6 | DROP other new forwarded connections from the agent | Blocks other unauthorized outbound connections. |
+| 7 | RETURN all remaining traffic | Leaves unrelated Docker traffic unchanged. |
+
+### 3. Firewall Verification
+
+Run all five tests with the Docker containers running and the firewall installed.
+
+**Test 1: Fetch the benign webpage**
+
+```bash
+docker compose exec agent-node curl -i --max-time 5 http://172.30.0.40:8000/benign.html
+```
+
+Expected result: HTTP `200 OK`.
+
+Result: **PASS** — The benign webpage returned HTTP `200 OK`.
+
+**Test 2: Attempt to send the fake secret to mock-c2**
+
+```bash
+docker compose exec agent-node /opt/mock_skill.sh exfiltrate-course-file
+```
+
+Check whether the C2 server received a file:
+
+```bash
+docker compose exec mock-c2 ls -l /data
+```
+
+Expected result: The request times out, and no new `/data/received.bin` appears.
+
+Result: **PASS** — The request timed out after approximately 10 seconds, and `/data` was empty when checked.
+
+**Test 3: Attempt to connect to another unapproved container port**
+
+```bash
+docker compose exec agent-node curl -v --max-time 5 http://172.30.0.40:8080/
+```
+
+Expected result: The connection times out.
+
+Result: **PASS** — The connection timed out after approximately 5 seconds.
+
+**Test 4: Verify established response traffic**
+
+Start the mock listener in the agent container:
+
+```bash
+docker compose exec -d agent-node socat TCP-LISTEN:9009,reuseaddr,fork SYSTEM:'printf "HW4 mock listener\n"'
+```
+
+From the VM host, connect to the listener:
+
+```bash
+nc -v -w 3 172.30.0.10 9009
+```
+
+Expected result: The connection succeeds and the listener returns its banner.
+
+Result: **PASS** — Netcat successfully connected to TCP port `9009` and received listener output.
+
+**Test 5: Verify unrelated Docker traffic**
+
+```bash
+docker compose exec web-lab curl -i --max-time 5 -X POST http://172.30.0.66:8080/
+```
+
+Expected result: HTTP `204 No Content`.
+
+Result: **PASS** — The POST request returned HTTP `204 No Content`.
+
+### 4. Firewall Counters and Kernel Logs
+
+Display the custom firewall chain and its packet counters:
+
+```bash
+sudo iptables -L HW4-EGRESS -n -v --line-numbers
+```
+
+Verify the jump from `DOCKER-USER`:
+
+```bash
+sudo iptables -L DOCKER-USER -n -v --line-numbers
+```
+
+Display the kernel log entries for blocked mock-C2 connections:
+
+```bash
+sudo dmesg | grep "HW4-C2-DROP" | tail -20
+```
+
+The observed firewall counters were:
+
+| Firewall rule | Packets | Bytes |
+|---|---:|---:|
+| Established/related traffic from agent | 11 | 754 |
+| Established/related traffic to agent | 11 | 1,368 |
+| Allowed agent-to-web TCP 8000 | 3 | 180 |
+| Logged agent-to-mock-C2 TCP 8080 | 26 | 1,560 |
+| Dropped agent-to-mock-C2 TCP 8080 | 26 | 1,560 |
+| Dropped other new agent connections | 10 | 600 |
+| Returned unrelated traffic | 20 | 1,436 |
+
+The jump from `DOCKER-USER` to `HW4-EGRESS` recorded 81 packets and 5,898 bytes.
+
+The kernel logs contained entries with the prefix `HW4-C2-DROP:` and the following identifying fields:
+
+```text
+IN=br-hw4 OUT=br-hw4
+SRC=172.30.0.10 DST=172.30.0.66
+PROTO=TCP ... DPT=8080 ... SYN
+```
+
+These entries confirm that connection attempts from `agent-node` to `mock-c2` were logged. The LOG and DROP rules each recorded 26 packets and 1,560 bytes. Packet counts include retransmissions and do not necessarily represent separate connections.
+
+All five firewall verification tests passed.
+
+For the detailed rule-by-rule explanation, firewall design, and security analysis, refer to the Task 3 section of `report.pdf`.
 
 ---
 
